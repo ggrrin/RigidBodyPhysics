@@ -1,0 +1,95 @@
+﻿using Microsoft.Xna.Framework;
+using PhysicsSimulator.Engine.MathAddition;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+namespace PhysicsSimulator.Engine
+{
+    class HalfLine:Line
+    {
+        private Vector2 directive;
+        public HalfLine(Vector2 point1, Vector2 point2, Color color)
+            : base(point1, point2, color)
+        {
+            this.directive = point2 - point1;
+            this.directive.Normalize();
+        }
+
+        public HalfLine(Color color, Vector2 point, Vector2 directive)
+            : base(point, point + directive, color)
+        {
+            if (directive.Length() == 0) throw new Exception();
+            this.directive = directive;
+            this.directive.Normalize();
+        }
+        
+        public override bool Intersects(Line line)
+        {
+            Vector2 qq;
+            CrossState css;
+            return this.Intersects(line, out qq, out css);
+        }
+
+        public override bool Intersects(Vector2 point)
+        {
+            if (!base.Intersects(point))
+                return false;
+            else            
+                return Helper.IsInSquareInterval(new Vector2(directive.X < 0 ? float.MinValue:float.MaxValue , directive.Y < 0 ? float.MinValue : float.MaxValue), Point1, point );                     
+        }
+
+        public override bool Intersects(Line line, out Vector2 intersection, out CrossState cs)
+        {
+            if (!base.Intersects(line, out intersection, out cs))
+                return false;
+            else            
+                return this.Intersects(intersection);            
+        }
+
+        public override bool Intersects(Elipse elipse, out Vector2 intersec1, out Vector2 intersec2, out CrossState cs)
+        {
+            if (!base.Intersects(elipse, out intersec1, out intersec2, out cs))
+                return false;
+            else
+            {
+                bool b,l;
+                b = this.Intersects(intersec1);
+                l = this.Intersects(intersec2);
+                if (b || l)
+                {                   
+                     if (cs == CrossState.Intersecting2Point)
+                        if(!(b && l))
+                        {
+                            if (b)
+                            {intersec2 = intersec1; cs = CrossState.Intersecting1Point;}
+                            else if (l)
+                            { intersec1 = intersec2; cs = CrossState.Intersecting1Point; } 
+                        }
+
+                    return true;
+                }
+                else
+                {
+                    cs = CrossState.DontIntersecting;
+                    return false;
+                }
+            }
+        }
+
+        public override bool Intersects(ConvexPolygon element)
+        {
+            //TODO: 
+            throw new Exception();
+            return base.Intersects(element);
+        }
+
+        public override bool Intersects(PhysicsSimulator.Engine.Elipse elipse)
+        {
+            //TODO:
+            throw new Exception();
+            return base.Intersects(elipse);
+        }
+    }
+}

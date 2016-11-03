@@ -1,0 +1,240 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace PhysicsSimulator.Engine
+{
+    class ElementLink
+    {
+        public bool isfunction;
+        public byte quadrant;
+
+        public float drift;
+        public float directive;
+        private Vector2 interval;
+
+        public ElementLink()
+        { throw new Exception("Use different constructor, this is forbiden."); }
+
+        public ElementLink(VertexPositionColor v1, VertexPositionColor v2)  
+        {
+            this.Update(v1, v2);
+        }
+        
+        public ElementLink(Vector2 v1, Vector2 v2)
+        {
+            
+            this.Update(v1, v2);
+        }
+
+
+        /// <summary>
+        /// Update link function directive and drift.
+        /// <param name="v1">New first vertex, which determine line"</param>
+        /// /// <param name="v1">New Second vertex, which determine line"</param>
+        /// </summary>
+        public void Update(Vector2 v1, Vector2 v2)
+        {   
+            if (v1 == v2) throw new Exception("These two points are the same and it doesn't determine line!!");
+
+            if (v1.X == v2.X) //pokud to neni funkce tak si drift definujeme jako x=... a interval jako y mezi kterými to je
+            {
+                isfunction = false;
+                drift = v1.X; // means x=....
+                
+                this.interval = new Vector2( MathHelper.Min(v1.Y, v2.Y), MathHelper.Max(v1.Y, v2.Y));
+
+                if (v1.Y <= v2.Y)
+                {
+                    directive = float.PositiveInfinity;
+                    quadrant = 2;
+                }
+                else
+                {
+                    directive = float.NegativeInfinity;
+                    quadrant = 4;
+                }
+            }
+            else
+            {
+                isfunction = true;
+                this.interval = new Vector2( MathHelper.Min(v1.X, v2.X), MathHelper.Max(v1.X, v2.X));
+                directive = (v2.Y - v1.Y)/(v2.X - v1.X) ;
+                drift = directive * -v2.X + v2.Y;               
+
+                if (directive >= 0)
+                    if (v1.X <= v2.X)                    
+                        this.quadrant = 1;  
+                    else                    
+                        this.quadrant = 3;
+                else
+                    if (v1.Y <= v2.Y)                    
+                        this.quadrant = 2;         
+                    else                    
+                        this.quadrant = 4;                      
+            }            
+        }
+
+        /// <summary>
+        /// Update link function directive and drift.
+        /// <param name="v1">New first vertex, which determine line"</param>
+        /// /// <param name="v1">New Second vertex, which determine line"</param>
+        /// </summary>
+        public void Update(VertexPositionColor v1, VertexPositionColor v2)
+        {
+            this.Update(new Vector2( v1.Position.X, v1.Position.Y), new Vector2( v2.Position.X, v2.Position.Y));
+        }
+
+        private float f(float x)
+        {
+            if (isfunction)
+                return directive * x + drift;
+            else
+                throw new Exception("This line is not function, you can not get a value!");
+        }
+
+        /// <summary>
+        /// Determine wheather point is in intersection area (it menas abouv or under line , determine with whole Element - (clockwise/counter clockwise)).
+        /// </summary>
+        /// <param name="point">Point to check.</param>
+        /// <param name="isClockwise">Is physics element clockwise?</param>
+        /// <returns>Returns true wheather it intersects.</returns>
+        public bool Intersects(Vector2 point, bool isClockwise)
+        {
+            if (!isfunction)
+            {
+                if (this.quadrant == 2)
+                    if (point.X >= drift)
+                        return !isClockwise ^ true;
+                    else
+                        return !isClockwise ^ false;
+                else if (this.quadrant == 4)
+                    if (point.X <= drift)
+                        return !isClockwise ^ true;
+                    else
+                        return !isClockwise ^ false;
+            }
+            else
+            {
+                if (this.quadrant == 2 || this.quadrant == 3)
+                    if (point.Y >= f(point.X))
+                        return !isClockwise ^ true;
+                    else
+                        return !isClockwise ^ false;
+                else if (this.quadrant == 4 || this.quadrant == 1)
+                    if (point.Y <= f(point.X))
+                        return !isClockwise ^ true;
+                    else
+                        return !isClockwise ^ false;
+            }
+            throw new Exception("Unecpect exeption in ElementLink.Intersects(Vector , bool) method!");            
+        }
+
+        /// <summary>
+        /// Determine wheather two links intersect.
+        /// </summary>
+        /// <param name="link">Link to check</param>
+        /// <param name="intersection">output for intersection value</param>
+        /// <returns>Returns wheather two links intersect.</returns>
+        public bool Intersects(ElementLink link, out Vector2 intersection)
+        {
+            intersection = Vector2.Zero;
+
+            if (isfunction)
+            {
+                if (!link.isfunction)// pokud tohle je funkce ale tamto ne
+                    return link.Intersects(this, out intersection);
+
+                if (directive == link.directive)//stejné směrnice                
+                    if (drift == link.drift)// fukce jsou totožné
+                    { 
+                        if (IsInInterval(this.interval, link.interval.X))
+                        {
+                            intersection = new Vector2( link.interval.X, f(link.interval.X));
+                            return true;
+                        }
+                        else if (IsInInterval(this.interval, link.interval.Y))
+                        {
+                            intersection = new Vector2( link.interval.Y, f(link.interval.Y));
+                            return true;
+                        }
+                    }
+                    else//rovnoběžky
+                        return false;
+                else
+                {
+                    float xCoor = (drift - link.drift) / (link.directive - directive);
+                    intersection = new Vector2( xCoor, f(xCoor));
+
+
+                    //pokuračování pro pokud je fce
+                    if (IsInInterval(link.interval, intersection.X) && IsInInterval(this.interval, intersection.X))
+                        return true;
+                    else
+                        return false;
+                }
+
+            }
+            else //tohel neni fce
+            {
+                if (link.isfunction)// link je fce a tohle neni
+                {
+                    intersection = new Vector2( drift, link.f(drift));
+
+                    if (IsInInterval(this.interval, intersection.Y) && IsInInterval(link.interval, intersection.X))
+                        return true;
+                    else
+                        return false;
+                }
+                else // ani jedno neni fce
+                {
+                    if (drift != link.drift) return false;
+                    else if (IsInInterval(this.interval, link.interval.X))
+                    {
+                        intersection = new Vector2( drift, link.interval.X);
+                        return true;
+                    }
+                    else if (IsInInterval(this.interval, link.interval.Y))
+                    {
+                        intersection = new Vector2( drift, link.interval.Y);
+                        return true;
+                    }
+                    else return false;
+                }
+            }
+
+            throw new Exception("Unecpect exeption in ElementLink.Intersect(link, intersection) method!");
+        }
+
+        /// <summary>
+        /// Determine wheather two links intersect.
+        /// </summary>
+        /// <param name="link">Link to check</param>
+        /// <returns>Returns wheather two links intersect.</returns>
+        public bool Intersects(ElementLink link)
+        {
+            Vector2 a;
+            return this.Intersects(link, out a);
+        }
+
+        /// <summary>
+        /// Determine if value is in specific interval. Interval don't have to be sorted.
+        /// </summary>
+        /// <param name="interval">Interval to check</param>
+        /// <param name="value">Value to check</param>
+        /// <returns>Returns true wheather value lies int interval.</returns>
+        private bool IsInInterval(Vector2 interval, float value)
+        {
+            interval = new Vector2( MathHelper.Min(interval.X, interval.Y), MathHelper.Max(interval.X, interval.Y));
+
+            if (value >= interval.X && value <= interval.Y)
+                return true;
+            else
+                return false;
+        }
+        
+    }
+}

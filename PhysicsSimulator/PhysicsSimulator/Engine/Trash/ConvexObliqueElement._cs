@@ -1,0 +1,191 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+namespace PhysicsSimulator.Engine
+{
+    class ConvexObliqueElement
+    {
+        private GraphicsDevice device;
+        private BasicEffect effect;
+
+        private VertexPositionColor[] nodes;
+        private ElementLink[] links;
+        
+        bool isCockwise;
+
+        public ConvexObliqueElement()
+        { throw new Exception("Use different constructor, this is forbiden."); }
+
+        /// <summary>
+        /// Create Element
+        /// </summary>
+        /// <param name="device">graphics device</param>
+        /// <param name="effect">Basic effect</param>
+        /// <param name="color">Color of nodes</param>
+        /// <param name="nodesParam">array of nodes in order in which they link eachother </param>
+        public ConvexObliqueElement(Color color, params Vector2[] nodesParam)
+        {
+            this.device = Configuration.device;
+            this.effect = Configuration.effect;
+
+            this.nodes = new VertexPositionColor[nodesParam.Length + 1];
+            this.nodes[0] = new VertexPositionColor(new Vector3( nodesParam[0], 0), color); // vyplnímm prní pole
+            this.nodes[this.nodes.Length - 1] = this.nodes[0]; // jden duplikátni vertex navíc pro uzavřeni cyklu
+
+            this.links = new ElementLink[nodesParam.Length];
+
+            //nastav nody a linky
+            for (int i = 1; i < this.nodes.Length ; i++)//začnu od jedničkzh kvůli dvojci
+            {
+                if(i != this.nodes.Length - 1)
+                    this.nodes[i] = new VertexPositionColor( new Vector3( nodesParam[i], 0), color);
+                this.links[i - 1] = new ElementLink(this.nodes[i - 1], this.nodes[i]);
+            }            
+
+            isCockwise = IsClockWise();
+
+            CheckInput();
+        }
+
+        #region "Intersections"
+        public bool Intersects(ConvexObliqueElement element)
+        {
+            return PointsIntersects(element) || element.PointsIntersects(this);//nevim jaktože to funguje ale je to hustý (je to privátní tak jakto ?)
+        }
+
+        public bool Intersects(Vector2 point) 
+        {
+            foreach (ElementLink link in links)
+                if (!link.Intersects(point, isCockwise))
+                    return false;
+
+            return true;
+        }
+
+        private bool PointsIntersects(ConvexObliqueElement element)
+        {
+            //jestli interagují samotné body
+            foreach (VertexPositionColor vpc in element.nodes)
+                if (Intersects(new Vector2( vpc.Position.X,vpc.Position.Y)))
+                    return true;               
+            
+            return false;            
+        }
+
+        public bool Intersects(Elipse element)
+        {
+            //TODO:
+            throw new Exception();
+        }
+
+#endregion
+
+        public void Draw()
+        {
+            effect.VertexColorEnabled = true;
+            effect.TextureEnabled = false;
+            effect.LightingEnabled = false;
+            effect.DirectionalLight0.Enabled = false;
+
+            foreach (EffectPass pass in effect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                device.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineStrip, nodes, 0, nodes.Length - 1);
+            }
+
+            device.BlendState = BlendState.Opaque;
+            device.DepthStencilState = DepthStencilState.Default;
+            device.SamplerStates[0] = SamplerState.LinearWrap;
+        }
+
+
+        #region "support function"
+
+        /// <summary>
+        /// zjištění, zda je psáno clockwise nebo counter clockwise
+        /// </summary>
+        /// <returns>wheather is clockwise true else flase</returns>
+        private bool IsClockWise()
+        {
+            for (int i = 0; i < links.Length - 1; i++)
+            {
+                if (links[i].directive != links[i + 1].directive)// hledej dokud nenajdeš dvě různe směrnice
+                    if (links[i].Intersects(new Vector2( nodes[i + 2].Position.X, nodes[i + 2].Position.Y), true))//bod určující směr druhé směrnice
+                        return true;
+                    else 
+                        return false;                
+                
+                if (i == links.Length - 2) throw new Exception("Can not find two different directives"); // pokud neexistují 2 různé směrnice <=> došli jsme na konec pole
+            }
+
+            throw new Exception("Unecpect exeption in PhysicElemnt.IsClockWise method!");
+        }
+
+
+        /// <summary>
+        /// Returns true if input is ok else thow exeption. ALL THE VARIABLES HAS TO BE SET!!!!!
+        /// </summary>
+        /// <returns></returns>
+        private bool CheckInput()
+        {
+            //najdi přechody mezi kvadranty honota rovná se index v poli links začátek kvadrantu
+            int[] changeQ = new int[] { -1, -1, -1, -1 };
+
+            int k = 0; // přechod -index pole changeQ -- na konci je to počet kvadrantů 
+
+            int g = 0; // procházení links
+
+            while ((g + 1) % links.Length != changeQ[0])//nastav do pole přechody mezi kvadranty -> pokud jsme došli k indexu prního kvadrantu našli jsme všechny přechody
+            {
+                try
+                {
+                    if (changeQ[k] == -1 && links[g % links.Length].quadrant != links[(g + 1) % links.Length].quadrant) // pokud jsem na přechodu mezi kvadranty tak to zapiš
+                    {
+                        changeQ[k++] = (g + 1) % links.Length;
+                    }
+                }
+                catch { throw new Exception("Element is not convex! It contains more then four separated qadrants!"); }               
+ 
+                g++;
+            }
+            if (k < 2) throw new Exception("This can not be convex elemnt! It has only two different directives.");
+
+
+            //test zda jsou směrnice v jednotlivých kvadrantech ve sprváném pořadí
+            for (int j = 0; j < k; j++)//projdeme postupně kvadranty
+            {
+                int max;//počet úseček v kvadrantu
+                if (changeQ[j] > changeQ[(j + 1)%k])
+                    max = links.Length - changeQ[j] + changeQ[(j + 1) % k];
+                else
+                    max = changeQ[(j + 1) % k] - changeQ[j];
+                    
+                for (int i = 0; i < max -1 /*kontroluju po dvouch pokud je v  intervalu je jedna funguje*/ ; i++)// projdeme prvky kvadrantů
+                {
+                    int linkIndex = (changeQ[j] + i) % links.Length;
+                    bool isDecresing = links[linkIndex].directive >= links[(linkIndex + 1)%links.Length].directive;// pokud klesá
+                    if (!isCockwise ^ !isDecresing)//pokud jde CCLW tak přehod hodnotu isDecresing
+                    {
+                        throw new Exception(String.Format("This can not be convex elemnt! In {0}th quadrant is incorrect order of directives",links[linkIndex].quadrant) );
+                    }
+                }
+            }
+
+            //test zda se některé linky neprotínají
+            for (int i = 2; i < links.Length - 1; i++)
+            {
+                for(int x = 0; x < i - 1; x++)
+                    if(links[x].Intersects(links[i])) throw new Exception(String.Format("At least two links are corssed ({0}. and {1}.) Crossing is forbiden! ", i,x));
+            }
+
+                return true;
+        }
+
+        #endregion
+
+    }
+}
